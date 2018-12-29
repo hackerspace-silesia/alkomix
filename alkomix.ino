@@ -2,29 +2,41 @@
 #include <ESP8266WiFi.h> 
 #include <DNSServer.h> 
 #include <WiFiManager.h>
+#include <Adafruit_SSD1306.h>
 
 #include <ESP8266mDNS.h>
 #include "webHandler.h"
 #include "PumpList.h"
 
 #define PUMPS_LEN 4
+#define PERCENT_DIFF 1
 
 char device_name[50];
 
 WiFiManager wifiManager; 
 ESP8266WebServer webServer(80);
-struct WebData webData = {
-    .percents = {25, 25, 25, 25},
-    .isReady = false
-};
 
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 32
+Adafruit_SSD1306 lcd(128, 32, &Wire, -1);
+bool lcdOk;
 
 // For nodemcu:
+// PUMPS
 // 5 - D1
 // 4 - D2
 // 4 - D2
 // 13 - D7
 // 15 - D8
+// LCD
+// SCL - D6 - 12
+// SDA - D7 - 14
+
+struct WebData webData = {
+    .percents = {25, 25, 25, 25},
+    .isReady = false
+};
+
 int pumpPins[PUMPS_LEN] = {5, 4, 13, 15};
 PumpList pumpList(PUMPS_LEN);
 
@@ -51,6 +63,37 @@ void initPumps () {
 
 void initLCD() {
     Serial.println("Init LCD...");
+    Wire.begin(14, 12);
+    lcdOk = lcd.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    if(!lcdOk) {
+      Serial.println("LCD init failed");
+      return;
+    }
+
+    lcd.display();
+    delay(500);
+    lcd.clearDisplay();
+    lcd.display();
+}
+
+void showTxt(String txt) {
+    if (!lcdOk) {
+        return;
+    }
+    lcd.clearDisplay();
+    lcd.setTextSize(2);
+    lcd.setTextColor(WHITE);
+    lcd.setCursor(0, 0);
+    lcd.println(txt);
+    lcd.display();
+}
+
+void showPercent(int index, int percent) {
+  showTxt(String("PUMP ") + String(index) + String("\n") + String(percent) + String("%"));
+}
+
+void showIp() {
+  showTxt(String("IP: ") + WiFi.localIP().toString());
 }
 
 void initWifi() {
@@ -94,11 +137,20 @@ void setup() {
     initLCD();
     initWifi();
     initWeb();
+    showIp();
 }
+
+long counterToast = 0;
 
 void loop() {
     webServer.handleClient(); 
     delay(10);
+
+    switch (counterToast) {
+      case 0: break;
+      case 1: showIp(); counterToast = 0; break;
+      default: counterToast--;
+    }
 
     if (!webData.isReady) {
         return;
@@ -106,12 +158,22 @@ void loop() {
 
     pumpList.setSpeed(50);
     pumpList.setCupMilliliter(300);
-    
+
+    int percentSum = 0;
     for(int i=0; i < PUMPS_LEN; i++) {
         int percent = webData.percents[i];
         Serial.printf("Running pump:%d with %d %%...\n", i, percent);
-        pumpList.runPump(i, percent);
-        Serial.println("Done.");
+
+        for(int percentStart=0; percentStart < percent; percentStart += PERCENT_DIFF) {
+            int percentDiff = min(PERCENT_DIFF, percent - percentStart);
+            percentSum += percentDiff;
+            showPercent(i, percentSum);
+            pumpList.runPump(i, percentDiff);
+        }
     }
     webData.isReady = false;
+
+    counterToast = 300;
+    showTxt("TOAST!");
+    Serial.println("Done.");
 }
