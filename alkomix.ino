@@ -76,7 +76,7 @@ void initLCD() {
     lcd.display();
 }
 
-void showTxt(String txt) {
+void showTxtWithoutDisplay(String txt) {
     if (!lcdOk) {
         return;
     }
@@ -85,11 +85,23 @@ void showTxt(String txt) {
     lcd.setTextColor(WHITE);
     lcd.setCursor(0, 0);
     lcd.println(txt);
+}
+
+void showTxt(String txt){
+    showTxtWithoutDisplay(txt);
     lcd.display();
 }
 
 void showPercent(int index, int percent) {
-  showTxt(String("PUMP ") + String(index) + String("\n") + String(percent) + String("%"));
+    if (!lcdOk) {
+        return;
+    }
+    showTxtWithoutDisplay(String("PUMP ") + String(index) + String("\n") + String(percent) + String("%"));
+    int width = lcd.width();
+    int height = lcd.height();
+    int rectHeight = percent * height / 100;
+    lcd.fillRect(width - 32, height - rectHeight, width, height, WHITE);
+    lcd.display();
 }
 
 void showIp() {
